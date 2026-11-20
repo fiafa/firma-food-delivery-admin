@@ -237,6 +237,7 @@
                         <p>📍 <b>Location:</b> ${escapeHtml(order.location)}</p>
                         <p>📞 <b>${escapeHtml(order.commMethod)}:</b> ${escapeHtml(order.contact)}</p>
                         <p>💳 <b>Payment:</b> ${order.paymentMethod === 'cod' ? 'Cash on Arrival' : 'QR Code Paid'}</p>
+                        ${order.telegram ? `<p>👤 <b>Telegram:</b> ${order.telegram.username ? '@' + escapeHtml(order.telegram.username) : escapeHtml(order.telegram.id)}</p>` : ''}
                     </div>
                     <div class="border-t border-gray-200 pt-2">
                         <p class="font-semibold text-gray-700 mb-1">Items:</p>
