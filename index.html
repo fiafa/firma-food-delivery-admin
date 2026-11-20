@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIRMA Admin</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0a9900'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen" class="min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <div class="flex items-center space-x-2">
+                <img src="https://fiafa.github.io/firma-food-delivery/images/firma-logo.png" alt="FIRMA Logo" class="w-7 h-7 object-contain">
+                <h1 class="font-bold text-lg text-gray-900">FIRMA Admin</h1>
+            </div>
+            <p class="text-xs text-gray-600">Enter the admin password to continue.</p>
+            <form id="login-form" class="space-y-3">
+                <input type="password" id="password-input" autocomplete="current-password" placeholder="Admin password" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary">
+                <p id="login-error" class="hidden text-xs text-red-600 font-semibold">Wrong password.</p>
+                <button type="submit" class="w-full bg-primary hover:bg-green-700 text-white font-bold py-2.5 rounded-xl transition">Unlock</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ADMIN PANEL -->
+    <div id="admin-screen" class="hidden min-h-screen">
+        <header class="sticky top-0 z-30 bg-white shadow-sm border-b border-gray-100 px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <img src="https://fiafa.github.io/firma-food-delivery/images/firma-logo.png" alt="FIRMA Logo" class="w-6 h-6 object-contain">
+                <h1 class="font-bold text-lg text-gray-900">FIRMA Admin</h1>
+            </div>
+            <button onclick="lockAdmin()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg font-medium transition">
+                Lock
+            </button>
+        </header>
+
+        <main class="max-w-md mx-auto p-4">
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                <h3 class="font-bold text-base text-gray-900 mb-3">🛠 Admin Control Panel</h3>
+                <p class="text-xs text-gray-600 mb-2">Managing FIRMA menu and orders</p>
+                <div class="flex space-x-2 border-b border-gray-100 pb-3 mb-4">
+                    <button onclick="switchAdminTab('orders')" id="admin-tab-orders" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white">Orders</button>
+                    <button onclick="switchAdminTab('menu')" id="admin-tab-menu" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-600">Manage Menu</button>
+                </div>
+
+                <!-- Admin Orders Tab -->
+                <div id="admin-section-orders" class="space-y-3">
+                    <h4 class="font-semibold text-sm text-gray-700">Incoming Orders</h4>
+                    <div id="admin-orders-list" class="space-y-3">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+
+                <!-- Admin Menu Tab -->
+                <div id="admin-section-menu" class="hidden space-y-4">
+                    <div class="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                        <h4 class="font-bold text-xs text-gray-800 mb-2">Add New Item</h4>
+                        <div class="space-y-2">
+                            <input type="text" id="new-item-name" placeholder="Item Name" class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs">
+                            <div class="grid grid-cols-2 gap-2">
+                                <input type="number" step="0.01" id="new-item-price" placeholder="Price ($)" class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs">
+                                <select id="new-item-cat" class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white">
+                                    <option value="burgers">Burgers</option>
+                                    <option value="pizza">Pizza</option>
+                                    <option value="drinks">Drinks</option>
+                                    <option value="snacks">Snacks</option>
+                                </select>
+                            </div>
+                            <input type="text" id="new-item-img" placeholder="Emoji icon (e.g. 🍔) or image path" class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs">
+                            <button onclick="addNewMenuItem()" class="w-full bg-primary text-white font-bold py-2 rounded-lg text-xs">Add Item</button>
+                        </div>
+                    </div>
+
+                    <h4 class="font-semibold text-sm text-gray-700">Existing Items</h4>
+                    <div id="admin-menu-list" class="space-y-2">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        const ADMIN_SALT = 'c44ba195c1b8b6f184fd2246e6b00d89';
+        const ADMIN_HASH = 'b149e6cbabef03d29e24650bd5cad76b0dbc71697f4b0fcd90f010a311066a95';
+        const ADMIN_ITERATIONS = 210000;
+        const SESSION_KEY = 'firma_admin_unlocked';
+        const STORE_BASE = 'https://fiafa.github.io/firma-food-delivery/';
+
+        const defaultMenu = [
+            { id: 1, name: 'Cheeseburger Deluxe', category: 'burgers', price: 8.99, image: '🍔' },
+            { id: 2, name: 'Double Bacon Burger', category: 'burgers', price: 10.99, image: '🥓' },
+            { id: 3, name: 'Pepperoni Pizza', category: 'pizza', price: 12.99, image: '🍕' },
+            { id: 4, name: 'Margherita Pizza', category: 'pizza', price: 10.49, image: '🧀' },
+            { id: 5, name: 'Crispy French Fries', category: 'snacks', price: 3.99, image: '🍟' },
+            { id: 6, name: 'Ice Cold Cola', category: 'drinks', price: 2.49, image: '🥤' }
+        ];
+
+        let menuItems = JSON.parse(localStorage.getItem('firma_menu')) || defaultMenu;
+        let orders = JSON.parse(localStorage.getItem('firma_orders')) || [];
+
+        const HTML_QUOTE = String.fromCharCode(38) + 'quot;';
+        const HTML_APOS = String.fromCharCode(38) + '#39;';
+
+        function escapeHtml(value) {
+            const node = document.createElement('div');
+            node.textContent = String(value ?? '');
+            return node.innerHTML.replace(/"/g, HTML_QUOTE).replace(/'/g, HTML_APOS);
+        }
+
+        function itemImage(item, sizeClass) {
+            const image = String(item.image || '');
+            if (image.startsWith('images/') || /^https?:\/\//.test(image)) {
+                const src = image.startsWith('images/') ? STORE_BASE + image : image;
+                return `<img src="${escapeHtml(src)}" class="${sizeClass} object-contain rounded">`;
+            }
+            return `<span class="${sizeClass}">${escapeHtml(image)}</span>`;
+        }
+
+        // Save state to localStorage
+        function saveMenu() {
+            localStorage.setItem('firma_menu', JSON.stringify(menuItems));
+        }
+        function saveOrders() {
+            localStorage.setItem('firma_orders', JSON.stringify(orders));
+        }
+
+        // Access control
+        function isUnlocked() {
+            return sessionStorage.getItem(SESSION_KEY) === '1';
+        }
+
+        function requireAdmin() {
+            if (isUnlocked()) return true;
+            showLogin();
+            return false;
+        }
+
+        function showLogin() {
+            document.getElementById('admin-screen').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('password-input').value = '';
+            document.getElementById('password-input').focus();
+        }
+
+        function showAdmin() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('admin-screen').classList.remove('hidden');
+            switchAdminTab('orders');
+        }
+
+        function lockAdmin() {
+            sessionStorage.removeItem(SESSION_KEY);
+            showLogin();
+        }
+
+        async function deriveHash(password, salt) {
+            const encoder = new TextEncoder();
+            const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+            const bits = await crypto.subtle.deriveBits({
+                name: 'PBKDF2',
+                salt: encoder.encode(salt),
+                iterations: ADMIN_ITERATIONS,
+                hash: 'SHA-256'
+            }, key, 256);
+            return Array.from(new Uint8Array(bits)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const error = document.getElementById('login-error');
+            const password = document.getElementById('password-input').value;
+            if (!password) return;
+            const hash = await deriveHash(password, ADMIN_SALT);
+            if (hash === ADMIN_HASH) {
+                error.classList.add('hidden');
+                sessionStorage.setItem(SESSION_KEY, '1');
+                showAdmin();
+            } else {
+                error.classList.remove('hidden');
+            }
+        });
+
+        function switchAdminTab(tab) {
+            if (!requireAdmin()) return;
+            document.getElementById('admin-section-orders').classList.add('hidden');
+            document.getElementById('admin-section-menu').classList.add('hidden');
+            document.getElementById('admin-tab-orders').className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-600';
+            document.getElementById('admin-tab-menu').className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-600';
+
+            if (tab === 'orders') {
+                document.getElementById('admin-section-orders').classList.remove('hidden');
+                document.getElementById('admin-tab-orders').className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white';
+                renderAdminOrders();
+            } else {
+                document.getElementById('admin-section-menu').classList.remove('hidden');
+                document.getElementById('admin-tab-menu').className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white';
+                renderAdminMenu();
+            }
+        }
+
+        // Admin Orders Rendering
+        function renderAdminOrders() {
+            if (!requireAdmin()) return;
+            const container = document.getElementById('admin-orders-list');
+            if (orders.length === 0) {
+                container.innerHTML = `<div class="text-center text-gray-400 py-6 text-xs">No orders yet.</div>`;
+                return;
+            }
+
+            container.innerHTML = orders.map(order => `
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2 text-xs">
+                    <div class="flex justify-between items-center font-bold">
+                        <span class="text-gray-900">#${escapeHtml(order.id)} - ${escapeHtml(order.name)}</span>
+                        <span class="text-primary">$${Number(order.total).toFixed(2)}</span>
+                    </div>
+                    <div class="text-gray-600 space-y-0.5">
+                        <p>📍 <b>Location:</b> ${escapeHtml(order.location)}</p>
+                        <p>📞 <b>${escapeHtml(order.commMethod)}:</b> ${escapeHtml(order.contact)}</p>
+                        <p>💳 <b>Payment:</b> ${order.paymentMethod === 'cod' ? 'Cash on Arrival' : 'QR Code Paid'}</p>
+                    </div>
+                    <div class="border-t border-gray-200 pt-2">
+                        <p class="font-semibold text-gray-700 mb-1">Items:</p>
+                        <ul class="list-disc list-inside text-gray-600">
+                            ${order.items.map(i => `<li>${escapeHtml(i.name)} x${escapeHtml(i.qty)}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="flex items-center justify-between pt-2 border-t border-gray-200">
+                        <span class="font-semibold text-gray-700">Status:</span>
+                        <select onchange="updateOrderStatus(${escapeHtml(order.id)}, this.value)" class="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-bold text-primary">
+                            <option value="Received" ${order.status === 'Received' ? 'selected' : ''}>Received</option>
+                            <option value="On the way" ${order.status === 'On the way' ? 'selected' : ''}>On the way</option>
+                            <option value="Arrived" ${order.status === 'Arrived' ? 'selected' : ''}>Arrived</option>
+                            <option value="Delivered" ${order.status === 'Delivered' ? 'selected' : ''}>Delivered</option>
+                        </select>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateOrderStatus(id, newStatus) {
+            if (!requireAdmin()) return;
+            const order = orders.find(o => o.id == id);
+            if (order) {
+                order.status = newStatus;
+                saveOrders();
+                renderAdminOrders();
+            }
+        }
+
+        // Admin Menu Management
+        function renderAdminMenu() {
+            if (!requireAdmin()) return;
+            const container = document.getElementById('admin-menu-list');
+            container.innerHTML = menuItems.map(item => `
+                <div class="flex items-center justify-between bg-gray-50 p-2.5 rounded-xl border border-gray-200 text-xs">
+                    <div class="flex items-center space-x-2">
+                        ${itemImage(item, 'w-6 h-6')}
+                        <div>
+                            <h5 class="font-bold text-gray-800">${escapeHtml(item.name)}</h5>
+                            <span class="text-primary font-semibold"> $${Number(item.price).toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        <button onclick="editItemImage(${escapeHtml(item.id)})" class="bg-white border border-gray-300 px-2 py-1 rounded text-gray-600 font-semibold hover:bg-gray-100">Edit Icon</button>
+                        <button onclick="editItemPrice(${escapeHtml(item.id)})" class="bg-white border border-gray-300 px-2 py-1 rounded text-gray-600 font-semibold hover:bg-gray-100">Edit Price</button>
+                        <button onclick="deleteMenuItem(${escapeHtml(item.id)})" class="bg-red-50 text-red-600 px-2 py-1 rounded font-semibold hover:bg-red-100">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addNewMenuItem() {
+            if (!requireAdmin()) return;
+            const name = document.getElementById('new-item-name').value.trim();
+            const price = parseFloat(document.getElementById('new-item-price').value);
+            const category = document.getElementById('new-item-cat').value;
+            const emojiInput = document.getElementById('new-item-img').value.trim();
+            const image = emojiInput || '🍔';
+
+            if (!name || isNaN(price)) {
+                alert('Please provide valid name and price.');
+                return;
+            }
+
+            menuItems.push({
+                id: Date.now(),
+                name,
+                price,
+                category,
+                image
+            });
+            saveMenu();
+            renderAdminMenu();
+            document.getElementById('new-item-name').value = '';
+            document.getElementById('new-item-price').value = '';
+            document.getElementById('new-item-img').value = '';
+            alert('Item added successfully!');
+        }
+
+        function editItemImage(id) {
+            if (!requireAdmin()) return;
+            const item = menuItems.find(i => i.id == id);
+            if (!item) return;
+            const newImage = prompt(`Enter emoji or image path for ${item.name}:\n- Emoji: 🍔\n- Image path: images/emojis/burger.png\n- URL: https://...`, item.image);
+            if (newImage !== null && newImage.trim() !== '') {
+                item.image = newImage.trim();
+                saveMenu();
+                renderAdminMenu();
+            }
+        }
+
+        function editItemPrice(id) {
+            if (!requireAdmin()) return;
+            const item = menuItems.find(i => i.id == id);
+            if (!item) return;
+            const newPrice = prompt(`Enter new price for ${item.name}:`, item.price);
+            if (newPrice !== null && !isNaN(parseFloat(newPrice))) {
+                item.price = parseFloat(newPrice);
+                saveMenu();
+                renderAdminMenu();
+            }
+        }
+
+        function deleteMenuItem(id) {
+            if (!requireAdmin()) return;
+            if (confirm('Are you sure you want to delete this item?')) {
+                menuItems = menuItems.filter(i => i.id != id);
+                saveMenu();
+                renderAdminMenu();
+            }
+        }
+
+        // Auto-refresh orders every 3 seconds
+        setInterval(() => {
+            if (!isUnlocked()) return;
+            orders = JSON.parse(localStorage.getItem('firma_orders')) || orders;
+            renderAdminOrders();
+        }, 3000);
+
+        if (isUnlocked()) {
+            showAdmin();
+        } else {
+            showLogin();
+        }
+    </script>
+</body>
+</html>
