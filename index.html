@@ -56,6 +56,7 @@
             <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                 <h3 class="font-bold text-base text-gray-900 mb-3">🛠 Admin Control Panel</h3>
                 <p class="text-xs text-gray-600 mb-2">Managing FIRMA menu and orders</p>
+                <p id="admin-mode" class="text-[10px] font-semibold text-gray-500 mb-3">Checking live connection…</p>
                 <div class="flex space-x-2 border-b border-gray-100 pb-3 mb-4">
                     <button onclick="switchAdminTab('orders')" id="admin-tab-orders" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white">Orders</button>
                     <button onclick="switchAdminTab('menu')" id="admin-tab-menu" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-600">Manage Menu</button>
@@ -104,7 +105,12 @@
         const ADMIN_HASH = 'b149e6cbabef03d29e24650bd5cad76b0dbc71697f4b0fcd90f010a311066a95';
         const ADMIN_ITERATIONS = 210000;
         const SESSION_KEY = 'firma_admin_unlocked';
+        const PASSWORD_KEY = 'firma_admin_password';
         const STORE_BASE = 'https://fiafa.github.io/firma-food-delivery/';
+        const API_BASE = 'https://firma-orders.etfifamobile.workers.dev';
+
+        let apiMode = false;
+        let apiPassword = '';
 
         const defaultMenu = [
             { id: 1, name: 'Cheeseburger Deluxe', category: 'burgers', price: 8.99, image: '🍔' },
@@ -170,6 +176,9 @@
 
         function lockAdmin() {
             sessionStorage.removeItem(SESSION_KEY);
+            sessionStorage.removeItem(PASSWORD_KEY);
+            apiMode = false;
+            apiPassword = '';
             showLogin();
         }
 
@@ -185,6 +194,40 @@
             return Array.from(new Uint8Array(bits)).map(byte => byte.toString(16).padStart(2, '0')).join('');
         }
 
+        async function apiFetch(path, options = {}) {
+            const response = await fetch(API_BASE + path, options);
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.error || `Request failed (${response.status})`);
+            }
+            return response.json();
+        }
+
+        async function tryApiLogin(password) {
+            try {
+                const data = await apiFetch(`/api/orders?password=${encodeURIComponent(password)}`);
+                if (!Array.isArray(data.orders)) return false;
+                apiMode = true;
+                apiPassword = password;
+                orders = data.orders;
+                const menu = await apiFetch('/api/menu');
+                if (Array.isArray(menu.items) && menu.items.length) {
+                    menuItems = menu.items;
+                    saveMenu();
+                }
+                const mode = document.getElementById('admin-mode');
+                mode.textContent = 'Live mode — orders from every device';
+                mode.className = 'text-[10px] font-semibold text-primary mb-3';
+                return true;
+            } catch (error) {
+                console.error('api login failed', error);
+                const mode = document.getElementById('admin-mode');
+                mode.textContent = 'Offline mode — only orders placed in this browser';
+                mode.className = 'text-[10px] font-semibold text-red-500 mb-3';
+                return false;
+            }
+        }
+
         document.getElementById('login-form').addEventListener('submit', async (event) => {
             event.preventDefault();
             const error = document.getElementById('login-error');
@@ -194,7 +237,10 @@
             if (hash === ADMIN_HASH) {
                 error.classList.add('hidden');
                 sessionStorage.setItem(SESSION_KEY, '1');
+                sessionStorage.setItem(PASSWORD_KEY, password);
                 showAdmin();
+                await tryApiLogin(password);
+                renderAdminOrders();
             } else {
                 error.classList.remove('hidden');
             }
@@ -219,8 +265,16 @@
         }
 
         // Admin Orders Rendering
-        function renderAdminOrders() {
+        async function renderAdminOrders() {
             if (!requireAdmin()) return;
+            if (apiMode) {
+                try {
+                    const data = await apiFetch(`/api/orders?password=${encodeURIComponent(apiPassword)}`);
+                    if (Array.isArray(data.orders)) orders = data.orders;
+                } catch (error) {
+                    console.error('orders sync failed', error);
+                }
+            }
             const container = document.getElementById('admin-orders-list');
             if (orders.length === 0) {
                 container.innerHTML = `<div class="text-center text-gray-400 py-6 text-xs">No orders yet.</div>`;
@@ -247,7 +301,7 @@
                     </div>
                     <div class="flex items-center justify-between pt-2 border-t border-gray-200">
                         <span class="font-semibold text-gray-700">Status:</span>
-                        <select onchange="updateOrderStatus(${escapeHtml(order.id)}, this.value)" class="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-bold text-primary">
+                        <select onchange="updateOrderStatus(${escapeHtml(JSON.stringify(String(order.id)))}, this.value)" class="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-bold text-primary">
                             <option value="Received" ${order.status === 'Received' ? 'selected' : ''}>Received</option>
                             <option value="On the way" ${order.status === 'On the way' ? 'selected' : ''}>On the way</option>
                             <option value="Arrived" ${order.status === 'Arrived' ? 'selected' : ''}>Arrived</option>
@@ -258,19 +312,55 @@
             `).join('');
         }
 
-        function updateOrderStatus(id, newStatus) {
+        async function updateOrderStatus(id, newStatus) {
             if (!requireAdmin()) return;
             const order = orders.find(o => o.id == id);
             if (order) {
                 order.status = newStatus;
                 saveOrders();
+                if (apiMode) {
+                    try {
+                        await apiFetch('/api/order-status', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ password: apiPassword, id, status: newStatus })
+                        });
+                    } catch (error) {
+                        alert(`Could not update the order: ${error.message}`);
+                    }
+                }
                 renderAdminOrders();
             }
         }
 
+        async function persistMenu() {
+            saveMenu();
+            if (!apiMode) return;
+            try {
+                await apiFetch('/api/menu', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ password: apiPassword, items: menuItems })
+                });
+            } catch (error) {
+                alert(`Could not save the menu: ${error.message}`);
+            }
+        }
+
         // Admin Menu Management
-        function renderAdminMenu() {
+        async function renderAdminMenu() {
             if (!requireAdmin()) return;
+            if (apiMode) {
+                try {
+                    const menu = await apiFetch('/api/menu');
+                    if (Array.isArray(menu.items) && menu.items.length) {
+                        menuItems = menu.items;
+                        saveMenu();
+                    }
+                } catch (error) {
+                    console.error('menu sync failed', error);
+                }
+            }
             const container = document.getElementById('admin-menu-list');
             container.innerHTML = menuItems.map(item => `
                 <div class="flex items-center justify-between bg-gray-50 p-2.5 rounded-xl border border-gray-200 text-xs">
@@ -282,15 +372,15 @@
                         </div>
                     </div>
                     <div class="flex items-center space-x-1">
-                        <button onclick="editItemImage(${escapeHtml(item.id)})" class="bg-white border border-gray-300 px-2 py-1 rounded text-gray-600 font-semibold hover:bg-gray-100">Edit Icon</button>
-                        <button onclick="editItemPrice(${escapeHtml(item.id)})" class="bg-white border border-gray-300 px-2 py-1 rounded text-gray-600 font-semibold hover:bg-gray-100">Edit Price</button>
-                        <button onclick="deleteMenuItem(${escapeHtml(item.id)})" class="bg-red-50 text-red-600 px-2 py-1 rounded font-semibold hover:bg-red-100">Delete</button>
+                        <button onclick="editItemImage(${escapeHtml(JSON.stringify(String(item.id)))})" class="bg-white border border-gray-300 px-2 py-1 rounded text-gray-600 font-semibold hover:bg-gray-100">Edit Icon</button>
+                        <button onclick="editItemPrice(${escapeHtml(JSON.stringify(String(item.id)))})" class="bg-white border border-gray-300 px-2 py-1 rounded text-gray-600 font-semibold hover:bg-gray-100">Edit Price</button>
+                        <button onclick="deleteMenuItem(${escapeHtml(JSON.stringify(String(item.id)))})" class="bg-red-50 text-red-600 px-2 py-1 rounded font-semibold hover:bg-red-100">Delete</button>
                     </div>
                 </div>
             `).join('');
         }
 
-        function addNewMenuItem() {
+        async function addNewMenuItem() {
             if (!requireAdmin()) return;
             const name = document.getElementById('new-item-name').value.trim();
             const price = parseFloat(document.getElementById('new-item-price').value);
@@ -310,7 +400,7 @@
                 category,
                 image
             });
-            saveMenu();
+            await persistMenu();
             renderAdminMenu();
             document.getElementById('new-item-name').value = '';
             document.getElementById('new-item-price').value = '';
@@ -318,35 +408,35 @@
             alert('Item added successfully!');
         }
 
-        function editItemImage(id) {
+        async function editItemImage(id) {
             if (!requireAdmin()) return;
             const item = menuItems.find(i => i.id == id);
             if (!item) return;
             const newImage = prompt(`Enter emoji or image path for ${item.name}:\n- Emoji: 🍔\n- Image path: images/emojis/burger.png\n- URL: https://...`, item.image);
             if (newImage !== null && newImage.trim() !== '') {
                 item.image = newImage.trim();
-                saveMenu();
+                await persistMenu();
                 renderAdminMenu();
             }
         }
 
-        function editItemPrice(id) {
+        async function editItemPrice(id) {
             if (!requireAdmin()) return;
             const item = menuItems.find(i => i.id == id);
             if (!item) return;
             const newPrice = prompt(`Enter new price for ${item.name}:`, item.price);
             if (newPrice !== null && !isNaN(parseFloat(newPrice))) {
                 item.price = parseFloat(newPrice);
-                saveMenu();
+                await persistMenu();
                 renderAdminMenu();
             }
         }
 
-        function deleteMenuItem(id) {
+        async function deleteMenuItem(id) {
             if (!requireAdmin()) return;
             if (confirm('Are you sure you want to delete this item?')) {
                 menuItems = menuItems.filter(i => i.id != id);
-                saveMenu();
+                await persistMenu();
                 renderAdminMenu();
             }
         }
@@ -360,6 +450,10 @@
 
         if (isUnlocked()) {
             showAdmin();
+            const savedPassword = sessionStorage.getItem(PASSWORD_KEY);
+            if (savedPassword) {
+                tryApiLogin(savedPassword).then(() => renderAdminOrders());
+            }
         } else {
             showLogin();
         }
