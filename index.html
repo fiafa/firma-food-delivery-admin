@@ -281,17 +281,28 @@
                 return;
             }
 
-            container.innerHTML = orders.map(order => `
+            container.innerHTML = orders.map(order => {
+                const contact = String(order.contact ?? '');
+                const contactIcon = order.commMethod === 'Phone' ? '📞' : '✈️';
+                const placedAt = order.createdAt
+                    ? new Date(order.createdAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Addis_Ababa' })
+                    : (order.timestamp || '');
+                const tgAccount = order.tgUsername
+                    ? '@' + order.tgUsername
+                    : (order.tgUserId ? String(order.tgUserId) : (order.telegram ? (order.telegram.username ? '@' + order.telegram.username : String(order.telegram.id)) : ''));
+                const showTgAccount = tgAccount && tgAccount.toLowerCase() !== contact.toLowerCase();
+                return `
                 <div class="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2 text-xs">
                     <div class="flex justify-between items-center font-bold">
                         <span class="text-gray-900">#${escapeHtml(order.id)} - ${escapeHtml(order.name)}</span>
                         <span class="text-primary">$${Number(order.total).toFixed(2)}</span>
                     </div>
                     <div class="text-gray-600 space-y-0.5">
+                        ${placedAt ? `<p>🕒 <b>Placed:</b> ${escapeHtml(placedAt)}</p>` : ''}
                         <p>📍 <b>Location:</b> ${escapeHtml(order.location)}</p>
-                        <p>📞 <b>${escapeHtml(order.commMethod)}:</b> ${escapeHtml(order.contact)}</p>
+                        <p>${contactIcon} <b>${escapeHtml(order.commMethod)}:</b> ${escapeHtml(contact)}</p>
                         <p>💳 <b>Payment:</b> ${order.paymentMethod === 'cod' ? 'Cash on Arrival' : 'QR Code Paid'}</p>
-                        ${order.telegram ? `<p>👤 <b>Telegram:</b> ${order.telegram.username ? '@' + escapeHtml(order.telegram.username) : escapeHtml(order.telegram.id)}</p>` : ''}
+                        ${showTgAccount ? `<p>👤 <b>Telegram account:</b> ${escapeHtml(tgAccount)}</p>` : ''}
                     </div>
                     <div class="border-t border-gray-200 pt-2">
                         <p class="font-semibold text-gray-700 mb-1">Items:</p>
@@ -309,7 +320,8 @@
                         </select>
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
 
         async function updateOrderStatus(id, newStatus) {
