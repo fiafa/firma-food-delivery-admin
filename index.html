@@ -64,7 +64,10 @@
 
                 <!-- Admin Orders Tab -->
                 <div id="admin-section-orders" class="space-y-3">
-                    <h4 class="font-semibold text-sm text-gray-700">Incoming Orders</h4>
+                    <div class="flex items-center justify-between">
+                        <h4 class="font-semibold text-sm text-gray-700">Incoming Orders</h4>
+                        <button onclick="refreshOrders()" class="text-[10px] font-semibold text-primary border border-primary rounded-lg px-2 py-1 hover:bg-green-50">Refresh</button>
+                    </div>
                     <div id="admin-orders-list" class="space-y-3">
                         <!-- Populated via JS -->
                     </div>
@@ -265,14 +268,29 @@
         }
 
         // Admin Orders Rendering
+        async function refreshOrders() {
+            if (!requireAdmin()) return;
+            if (!apiMode) {
+                const savedPassword = sessionStorage.getItem(PASSWORD_KEY);
+                if (savedPassword) await tryApiLogin(savedPassword);
+            }
+            renderAdminOrders();
+        }
+
         async function renderAdminOrders() {
             if (!requireAdmin()) return;
             if (apiMode) {
                 try {
                     const data = await apiFetch(`/api/orders?password=${encodeURIComponent(apiPassword)}`);
                     if (Array.isArray(data.orders)) orders = data.orders;
+                    const mode = document.getElementById('admin-mode');
+                    mode.textContent = 'Live mode — orders from every device';
+                    mode.className = 'text-[10px] font-semibold text-primary mb-3';
                 } catch (error) {
                     console.error('orders sync failed', error);
+                    const mode = document.getElementById('admin-mode');
+                    mode.textContent = `Live sync failed: ${error.message}`;
+                    mode.className = 'text-[10px] font-semibold text-red-500 mb-3';
                 }
             }
             const container = document.getElementById('admin-orders-list');
@@ -453,12 +471,17 @@
             }
         }
 
-        // Auto-refresh orders every 3 seconds
-        setInterval(() => {
-            if (!isUnlocked()) return;
-            orders = JSON.parse(localStorage.getItem('firma_orders')) || orders;
-            renderAdminOrders();
-        }, 3000);
+        // Refresh when the admin returns to the tab; the Refresh button covers the rest.
+        let lastRefreshAt = 0;
+        function refreshOnReturn() {
+            if (!isUnlocked() || document.hidden) return;
+            const now = Date.now();
+            if (now - lastRefreshAt < 3000) return;
+            lastRefreshAt = now;
+            refreshOrders();
+        }
+        document.addEventListener('visibilitychange', refreshOnReturn);
+        window.addEventListener('focus', refreshOnReturn);
 
         if (isUnlocked()) {
             showAdmin();
